@@ -9,27 +9,7 @@ import asyncio
 import time
 import os
 
-# logging.basicConfig(
-#     format='[%(name)s] %(asctime)s [%(levelname)-5.5s] %(message)s',
-#     datefmt='%H:%M:%S',
-#     level=logging.DEBUG
-# )
-
 VER=0.1
-
-# logger = logging.getLogger("SAVI")
-# formatter = logging.Formatter('[%(name)s] %(asctime)s [%(levelname)-5.5s] %(message)s')
-
-# stream_handler = logging.StreamHandler()
-# stream_handler.setLevel(logging.INFO)
-# stream_handler.setFormatter(formatter)
-
-# file_handler = logging.handlers.RotatingFileHandler(filename='savi.log')
-# file_handler.setFormatter(formatter)
-# file_handler.setLevel(logging.DEBUG)
-
-# logger.addHandler(file_handler)
-# logger.addHandler(stream_handler)
 
 def ingest_pdf(pdf_path):
     try:
@@ -49,12 +29,12 @@ async def user_input(prompt_session):
 
 async def get_savi_response(client, prompt):
     completion = await client.chat.completions.create(
-        # model="gpt-4",
-        model="gpt-3.5-turbo",
+        model="gpt-4",
+        # model="gpt-3.5-turbo",
         messages=[
             {
                 "role": "system",
-                "content": "You are a poetic assistant, skilled in explaining complex programming concepts with creative flair."
+                "content": "You are a virtual assistant responsible for parsing and explaining the rules from a game called Shadowrun."
             },
             {
                 "role": "user",
@@ -119,6 +99,20 @@ async def chat_loop(client):
 def main(args):
     client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
+    # first, ingest all PDFs and "configure" this open instance of GPT4processed_text
+    processed_text = ""
+    for pdf in Path('pdfs').rglob('*.txt'):
+        with open(pdf, 'r', encoding='utf-8') as rf:
+            start_t = time.time()
+            processed_text = rf.read()
+            print(f'> read {len(processed_text)} text lines? in {time.time() - start_t:02f} seconds')
+    ingest_prompt = f"The following rulebook explains rules about Shadowrun: {processed_text}"
+    print(ingest_prompt[:100])
+
+    completion = asyncio.run(get_savi_response(client, ingest_prompt[:100]))
+    # print(completion)
+    print(f'I have read 1000 characters of Shadowrun, I think.')
+
     asyncio.run(chat_loop(client))
     # ingest all pdfs on the path
     # for pdf in Path('pdfs').rglob('*.pdf'):
@@ -127,11 +121,6 @@ def main(args):
     #     with open(f'pdfs/{pdf.stem}.txt', 'w', encoding='utf-8') as pf:
     #         pf.write(pdf_text)
 
-    # for pdf in Path('pdfs').rglob('*.txt'):
-    #     with open(pdf, 'r', encoding='utf-8') as rf:
-    #         start_t = time.time()
-    #         processed_text = rf.read()
-    #         print(f'read {len(processed_text)} text lines? in {time.time() - start_t:02f} seconds')
 
 
 if __name__ == '__main__':
