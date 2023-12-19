@@ -23,22 +23,36 @@ def ingest_pdf(pdf_path):
 
     except:
         raise Exception(f'Supplied path {pdf_path} does not exist, or is not a PDF path.')
+    
+async def configure_savi(client):
+    _ = await client.chat.completions.create(
+        model='gpt-4',
+        messages=[
+            {
+                'role': 'system',
+                'content': 'You are a virtual assistant responsible for parsing and explaining the rules from a game called Shadowrun.' + \
+                            ' Only use rules from the 5th edition of Shadowrun.' + \
+                            ' Use as much errata as possible.' + \
+                            ' Reference all source books for the 5th edition.' + \
+                            ' When possible, use a translated copy of the Germain edition of Shadowrun 5E, as it is edited better.' + \
+                            ' Please indicate which sourcebooks you are pulling rules from, and reference with a page number, if possible.' + \
+                            ' You must not use an introduction.' + \
+                            ' Act as if you are a futuristic AI.' + \
+                            ' All queries will be relevant to Shadowrun 5th Edition only.'
+            }
+        ]
+    )
 
 async def user_input(prompt_session):
     return await prompt_session.prompt_async()
 
 async def get_savi_response(client, prompt):
     completion = await client.chat.completions.create(
-        model="gpt-4",
-        # model="gpt-3.5-turbo",
+        model='gpt-4',
         messages=[
             {
-                "role": "system",
-                "content": "You are a virtual assistant responsible for parsing and explaining the rules from a game called Shadowrun."
-            },
-            {
-                "role": "user",
-                "content": prompt
+                'role': 'user',
+                'content': prompt
             }
         ]
     )
@@ -74,45 +88,47 @@ animate_response.frames = [
 ]
     
 async def chat_loop(client):
-    # two states: waiting for user input, and waiting for a response
-    prompt_session = PromptSession(message=animate_ps.frames[0])
+    while True:
+        # two states: waiting for user input, and waiting for a response
+        prompt_session = PromptSession(message=animate_ps.frames[0])
 
-    # animate the waiting prompt
-    animate_ps_task = asyncio.create_task(animate_ps(prompt_session))
-    #
-    # gather input and await it, then cancel the animation
-    prompt_task = asyncio.create_task(user_input(prompt_session))
-    prompt = await prompt_task
-    #
-    animate_ps_task.cancel()
+        # animate the waiting prompt
+        animate_ps_task = asyncio.create_task(animate_ps(prompt_session))
+        #
+        # gather input and await it, then cancel the animation
+        prompt_task = asyncio.create_task(user_input(prompt_session))
+        prompt = await prompt_task
+        #
+        animate_ps_task.cancel()
 
-    # now generate the response (and animate the wait time)
-    animate_resp_task = asyncio.create_task(animate_response())
-    #
-    response_task = asyncio.create_task(get_savi_response(client, prompt))
-    response = await response_task
-    #
-    animate_resp_task.cancel()
+        # now generate the response (and animate the wait time)
+        animate_resp_task = asyncio.create_task(animate_response())
+        #
+        response_task = asyncio.create_task(get_savi_response(client, prompt))
+        response = await response_task
+        #
+        animate_resp_task.cancel()
 
-    print(f'>>> [SAVI v{float(VER):0.2f}] //: {response}')
+        print(f'>>> [SAVI v{float(VER):0.2f}] //: {response}')
 
 def main(args):
-    client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    client = AsyncOpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
 
     # first, ingest all PDFs and "configure" this open instance of GPT4processed_text
-    processed_text = ""
-    for pdf in Path('pdfs').rglob('*.txt'):
-        with open(pdf, 'r', encoding='utf-8') as rf:
-            start_t = time.time()
-            processed_text = rf.read()
-            print(f'> read {len(processed_text)} text lines? in {time.time() - start_t:02f} seconds')
-    ingest_prompt = f"The following rulebook explains rules about Shadowrun: {processed_text}"
-    print(ingest_prompt[:100])
+    # processed_text = ""
+    # for pdf in Path('pdfs').rglob('*.txt'):
+    #     with open(pdf, 'r', encoding='utf-8') as rf:
+    #         start_t = time.time()
+    #         processed_text = rf.read()
+    #         print(f'> read {len(processed_text)} text lines? in {time.time() - start_t:02f} seconds')
+    # ingest_prompt = f"The following rulebook explains rules about Shadowrun: {processed_text}"
+    # print(ingest_prompt[:100])
 
-    completion = asyncio.run(get_savi_response(client, ingest_prompt[:100]))
-    # print(completion)
-    print(f'I have read 1000 characters of Shadowrun, I think.')
+    # completion = asyncio.run(get_savi_response(client, ingest_prompt[:100]))
+    # # print(completion)
+    # print(f'I have read 1000 characters of Shadowrun, I think.')
 
+    asyncio.run(configure_savi(client))
     asyncio.run(chat_loop(client))
     # ingest all pdfs on the path
     # for pdf in Path('pdfs').rglob('*.pdf'):
