@@ -1,10 +1,11 @@
 from openai import AsyncOpenAI
 from PyPDF2 import PdfReader
 from prompt_toolkit import PromptSession
+from rich import print as r_print
+from rich.markdown import Markdown
+
 from pathlib import Path
 
-import logging
-import logging.handlers
 import asyncio
 import time
 import os
@@ -27,7 +28,7 @@ def ingest_pdf(pdf_path):
 async def user_input(prompt_session):
     return await prompt_session.prompt_async()
 
-async def get_savi_response(client, prompt, mode='shadowrun'):
+async def get_savi_response(client, prompt, mode):
     if mode == 'shadowrun':
         completion = await client.chat.completions.create(
             model='gpt-4-1106-preview',
@@ -37,14 +38,14 @@ async def get_savi_response(client, prompt, mode='shadowrun'):
                 {
                     'role': 'system',
                     'content': 'You are a virtual assistant responsible for parsing and explaining the rules from a game called Shadowrun.' + \
+                                ' Your name is SAVI, which stands for Shadowrun Aggregator Virtual Interface. Also, Shiawase Arms Virtual Intelligence.' + \
                                 ' Only use rules from the 5th edition of Shadowrun.' + \
-                                ' Use as much errata as possible.' + \
                                 ' Reference all source books for the 5th edition.' + \
                                 ' Please indicate which sourcebooks you are pulling rules from, and reference with a page number, if possible.' + \
-                                ' Use the english-language versions.' + \
                                 ' All queries will be relevant to Shadowrun 5th Edition only.' + \
                                 ' When possible, use a tabular format.' + \
-                                ' Be brief in your responses.'
+                                ' Be brief in your responses.' + \
+                                ' Your quantitative answers are typically incorrect. Try to use qualitative answers.'
                 },
                 {
                     'role': 'user',
@@ -70,12 +71,10 @@ async def animate_ps(prompt_session):
         for frame in animate_ps.frames:
             prompt_session.message = frame
             prompt_session.app.invalidate()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 animate_ps.frames = [
     '>>> [USER QUERY] //? ',
-    '>>> [USER QUERY] /// ',
-    '>>> [USER QUERY] ?// ',
-    '>>> [USER QUERY] /?/ '
+    '>>> [USER QUERY] //: ',
 ]
 
 async def animate_response():
@@ -93,7 +92,7 @@ animate_response.frames = [
     f'>>> [SAVI v{float(VER):0.2f}] //:   .'
 ]
     
-async def chat_loop(client, mode='shadowrun'):
+async def chat_loop(client, mode):
     while True:
         # two states: waiting for user input, and waiting for a response
         prompt_session = PromptSession(message=animate_ps.frames[0])
@@ -110,19 +109,22 @@ async def chat_loop(client, mode='shadowrun'):
         # now generate the response (and animate the wait time)
         animate_resp_task = asyncio.create_task(animate_response())
         #
-        response_task = asyncio.create_task(get_savi_response(client, prompt, mode=mode))
+        response_task = asyncio.create_task(get_savi_response(client, prompt, mode))
         response = await response_task
         #
         animate_resp_task.cancel()
 
-        print(f'>>> [SAVI v{float(VER):0.2f}] //: {response}')
+        print(f'>>> [SAVI v{float(VER):0.2f}] //:')
+        r_print(Markdown('---'))
+        r_print(Markdown(response))
+        r_print(Markdown('---'))
 
 def main(args):
     if (mode := args.mode.lower()) not in ('generic', 'shadowrun'):
         raise ValueError(f'Mode value "{mode}" not supported.')
 
     client = AsyncOpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
-    asyncio.run(chat_loop(client, mode=args.mode.lower()))
+    asyncio.run(chat_loop(client, args.mode.lower()))
 
     # ingest all pdfs on the path
     # for pdf in Path('pdfs').rglob('*.pdf'):
@@ -131,11 +133,15 @@ def main(args):
     #     with open(f'pdfs/{pdf.stem}.txt', 'w', encoding='utf-8') as pf:
     #         pf.write(pdf_text)
 
-
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('--mode', type=str, help='Use a generic interface, or a Shadowrun-specific interface. Options are "generic" and "shadowrun".')
+    parser.add_argument(
+        '--mode',
+        type=str,
+        default='shadowrun',
+        help='Use a generic interface, or a Shadowrun-specific interface. Options are "generic" and "shadowrun".'
+    )
     args = parser.parse_args()
 
     from dotenv import load_dotenv
