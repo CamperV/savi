@@ -23,39 +23,45 @@ def ingest_pdf(pdf_path):
 
     except:
         raise Exception(f'Supplied path {pdf_path} does not exist, or is not a PDF path.')
-    
-async def configure_savi(client):
-    _ = await client.chat.completions.create(
-        model='gpt-4',
-        messages=[
-            {
-                'role': 'system',
-                'content': 'You are a virtual assistant responsible for parsing and explaining the rules from a game called Shadowrun.' + \
-                            ' Only use rules from the 5th edition of Shadowrun.' + \
-                            ' Use as much errata as possible.' + \
-                            ' Reference all source books for the 5th edition.' + \
-                            ' When possible, use a translated copy of the Germain edition of Shadowrun 5E, as it is edited better.' + \
-                            ' Please indicate which sourcebooks you are pulling rules from, and reference with a page number, if possible.' + \
-                            ' You must not use an introduction.' + \
-                            ' Act as if you are a futuristic AI.' + \
-                            ' All queries will be relevant to Shadowrun 5th Edition only.'
-            }
-        ]
-    )
 
 async def user_input(prompt_session):
     return await prompt_session.prompt_async()
 
-async def get_savi_response(client, prompt):
-    completion = await client.chat.completions.create(
-        model='gpt-4',
-        messages=[
-            {
-                'role': 'user',
-                'content': prompt
-            }
-        ]
-    )
+async def get_savi_response(client, prompt, mode='shadowrun'):
+    if mode == 'shadowrun':
+        completion = await client.chat.completions.create(
+            model='gpt-4-1106-preview',
+
+            # yes, you need to provide this context for every message. I know
+            messages=[
+                {
+                    'role': 'system',
+                    'content': 'You are a virtual assistant responsible for parsing and explaining the rules from a game called Shadowrun.' + \
+                                ' Only use rules from the 5th edition of Shadowrun.' + \
+                                ' Use as much errata as possible.' + \
+                                ' Reference all source books for the 5th edition.' + \
+                                ' Please indicate which sourcebooks you are pulling rules from, and reference with a page number, if possible.' + \
+                                ' Use the english-language versions.' + \
+                                ' All queries will be relevant to Shadowrun 5th Edition only.' + \
+                                ' When possible, use a tabular format.' + \
+                                ' Be brief in your responses.'
+                },
+                {
+                    'role': 'user',
+                    'content': prompt
+                }
+            ]
+        )
+    elif mode == 'generic':
+        completion = await client.chat.completions.create(
+            model='gpt-4-1106-preview',
+            messages=[
+                {
+                    'role': 'user',
+                    'content': prompt
+                }
+            ]
+        )
 
     return completion.choices[0].message.content
     
@@ -87,7 +93,7 @@ animate_response.frames = [
     f'>>> [SAVI v{float(VER):0.2f}] //:   .'
 ]
     
-async def chat_loop(client):
+async def chat_loop(client, mode='shadowrun'):
     while True:
         # two states: waiting for user input, and waiting for a response
         prompt_session = PromptSession(message=animate_ps.frames[0])
@@ -104,7 +110,7 @@ async def chat_loop(client):
         # now generate the response (and animate the wait time)
         animate_resp_task = asyncio.create_task(animate_response())
         #
-        response_task = asyncio.create_task(get_savi_response(client, prompt))
+        response_task = asyncio.create_task(get_savi_response(client, prompt, mode=mode))
         response = await response_task
         #
         animate_resp_task.cancel()
@@ -112,24 +118,12 @@ async def chat_loop(client):
         print(f'>>> [SAVI v{float(VER):0.2f}] //: {response}')
 
 def main(args):
+    if (mode := args.mode.lower()) not in ('generic', 'shadowrun'):
+        raise ValueError(f'Mode value "{mode}" not supported.')
+
     client = AsyncOpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+    asyncio.run(chat_loop(client, mode=args.mode.lower()))
 
-    # first, ingest all PDFs and "configure" this open instance of GPT4processed_text
-    # processed_text = ""
-    # for pdf in Path('pdfs').rglob('*.txt'):
-    #     with open(pdf, 'r', encoding='utf-8') as rf:
-    #         start_t = time.time()
-    #         processed_text = rf.read()
-    #         print(f'> read {len(processed_text)} text lines? in {time.time() - start_t:02f} seconds')
-    # ingest_prompt = f"The following rulebook explains rules about Shadowrun: {processed_text}"
-    # print(ingest_prompt[:100])
-
-    # completion = asyncio.run(get_savi_response(client, ingest_prompt[:100]))
-    # # print(completion)
-    # print(f'I have read 1000 characters of Shadowrun, I think.')
-
-    asyncio.run(configure_savi(client))
-    asyncio.run(chat_loop(client))
     # ingest all pdfs on the path
     # for pdf in Path('pdfs').rglob('*.pdf'):
     #     pdf_text = ingest_pdf(pdf)
@@ -138,11 +132,10 @@ def main(args):
     #         pf.write(pdf_text)
 
 
-
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    # parser.add_argument('prompt', type=str)
+    parser.add_argument('--mode', type=str, help='Use a generic interface, or a Shadowrun-specific interface. Options are "generic" and "shadowrun".')
     args = parser.parse_args()
 
     from dotenv import load_dotenv
