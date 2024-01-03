@@ -10,7 +10,8 @@ import asyncio
 import time
 import os
 
-VER=0.1
+VER=0.2
+OPMODE = None   # defined via args
 
 def ingest_pdf(pdf_path):
     try:
@@ -28,8 +29,8 @@ def ingest_pdf(pdf_path):
 async def user_input(prompt_session):
     return await prompt_session.prompt_async()
 
-async def get_savi_response(client, prompt, mode):
-    if mode == 'shadowrun':
+async def get_savi_response(client, prompt):
+    if OPMODE == 'SR5E':
         completion = await client.chat.completions.create(
             model='gpt-4-1106-preview',
 
@@ -53,7 +54,7 @@ async def get_savi_response(client, prompt, mode):
                 }
             ]
         )
-    elif mode == 'generic':
+    elif OPMODE == 'GENERIC':
         completion = await client.chat.completions.create(
             model='gpt-4-1106-preview',
             messages=[
@@ -68,34 +69,46 @@ async def get_savi_response(client, prompt, mode):
     
 async def animate_ps(prompt_session):
     while True:
-        for frame in animate_ps.frames:
+        for frame in get_dynamic_ps_frames():
             prompt_session.message = frame
             prompt_session.app.invalidate()
             await asyncio.sleep(1)
-animate_ps.frames = [
-    '>>> [USER QUERY] //? ',
-    '>>> [USER QUERY] //: ',
+animate_ps.static_frames = [
+    '>>> [{}] //? ',
+    '>>> [{}] //: ',
 ]
+
+def get_dynamic_ps_frames():
+    return [
+        frame.format(f'userQuery {{mode:{OPMODE}}}')
+        for frame in animate_ps.static_frames
+    ]
 
 async def animate_response():
     while True:
-        for frame in animate_response.frames:
+        for frame in get_dynamic_response_frames():
             print(frame, end='\r', flush=True)
             await asyncio.sleep(0.5)
         print(end='\x1b[2K') # ANSI sequence for LINE CLEAR
-animate_response.frames = [
-    f'>>> [SAVI v{float(VER):0.2f}] //: ',
-    f'>>> [SAVI v{float(VER):0.2f}] //: .',
-    f'>>> [SAVI v{float(VER):0.2f}] //: ..',
-    f'>>> [SAVI v{float(VER):0.2f}] //: ...',
-    f'>>> [SAVI v{float(VER):0.2f}] //:  ..',
-    f'>>> [SAVI v{float(VER):0.2f}] //:   .'
+animate_response.static_frames = [
+    '>>> [{}] //: ',
+    '>>> [{}] //: .',
+    '>>> [{}] //: ..',
+    '>>> [{}] //: ...',
+    '>>> [{}] //:  ..',
+    '>>> [{}] //:   .'
 ]
+
+def get_dynamic_response_frames():
+    return [
+        frame.format(f'SAVI v{float(VER):0.1f} {{mode:{OPMODE}}}')
+        for frame in animate_response.static_frames
+    ]
     
-async def chat_loop(client, mode):
+async def chat_loop(client):
     while True:
         # two states: waiting for user input, and waiting for a response
-        prompt_session = PromptSession(message=animate_ps.frames[0])
+        prompt_session = PromptSession(message=get_dynamic_ps_frames()[0])
 
         # animate the waiting prompt
         animate_ps_task = asyncio.create_task(animate_ps(prompt_session))
@@ -109,29 +122,27 @@ async def chat_loop(client, mode):
         # now generate the response (and animate the wait time)
         animate_resp_task = asyncio.create_task(animate_response())
         #
-        response_task = asyncio.create_task(get_savi_response(client, prompt, mode))
+        response_task = asyncio.create_task(get_savi_response(client, prompt))
         response = await response_task
         #
         animate_resp_task.cancel()
 
-        print(f'>>> [SAVI v{float(VER):0.2f}] //:')
+        print(get_dynamic_response_frames()[0])
         r_print(Markdown('---'))
         r_print(Markdown(response))
         r_print(Markdown('---'))
 
 def main(args):
-    if (mode := args.mode.lower()) not in ('generic', 'shadowrun'):
+    if (mode := args.mode.upper()) in ('GENERIC', 'SR5E'):
+        global OPMODE
+        OPMODE = mode
+
+        client = AsyncOpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+        asyncio.run(chat_loop(client))
+
+    else:
         raise ValueError(f'Mode value "{mode}" not supported.')
 
-    client = AsyncOpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
-    asyncio.run(chat_loop(client, args.mode.lower()))
-
-    # ingest all pdfs on the path
-    # for pdf in Path('pdfs').rglob('*.pdf'):
-    #     pdf_text = ingest_pdf(pdf)
-
-    #     with open(f'pdfs/{pdf.stem}.txt', 'w', encoding='utf-8') as pf:
-    #         pf.write(pdf_text)
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
@@ -139,8 +150,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--mode',
         type=str,
-        default='shadowrun',
-        help='Use a generic interface, or a Shadowrun-specific interface. Options are "generic" and "shadowrun".'
+        default='SR5E',
+        help='Use a generic interface, or a Shadowrun-specific interface. Options are "GENERIC" and "SR5E".'
     )
     args = parser.parse_args()
 
